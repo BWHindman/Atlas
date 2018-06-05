@@ -1,0 +1,14 @@
+
+To update changes made on Nick's repositories:
+
+login on some machine
+git remote -v				(Shows the <origin> of the cloned repository and which upstream respository that was originally forked)
+git pull upstream <branch1>		(Pull down all changes from the upstream repository for the specified branch)
+git push origin <branch1>		(This updates my repository on GitHub)
+do pulls on all other machines
+
+
+To afterward merge these changes into other local branches 
+git checkout <branch2>
+git merge <branch1>			(Merges the changes in branch1 into branch2)
+git push origin <branch2>		(Update the GitHub repository)
