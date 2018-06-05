@@ -1,0 +1,38 @@
+
+# WHAT IS ATLAS?
+
+ATLAS is a single-binary code that performs the tile tracking, power spectrum making, and multi-ridge fitting necessary to do high-resolution ring-diagram analysis. The tracking portion of the code originates from mtrack, which is used in the HMI ring-diagram pipeline. I wrote a newer, parallelized version of mtrack and called it FRACK (FORTRAN Tracking). The power spectrum portion is from an old code named pspec3 (I think). I wrote a newer, parallelized version of pspec3 and called it PSPEC (also in FORTRAN). The final component of ATLAS is the Multi-Ridge Fitting (MRF) code, which is presented in Greer et al. 2014 (Sol. Phys.). The MRF code is written in C.
+
+All three of these codes (FRACK, PSPEC, MRF) can be strung together with scripts and automated to the point of creating something that mimics the HMI pipeline. This works just fine until you want to do high-resolution analysis. To see why, consider the inputs and outputs of each code for a standard single-day 16-degree tile set:
+
+FRACK INPUT: full-disk Dopplergrams (64 GB)
+FRACK OUTPUT / PSPEC INPUT: tracked tiles (1.2 GB per tile)
+PSPEC OUTPUT / MRF INPUT: unwrapped power spectra (50 MB per tile)
+MRF OUTPUT: ring fits (7 KB per tile)
+
+Standard dense-packing results in around 300 16-degree tiles for a single day. This means 360 GB of tracked tiles need to be saved to the disk and loaded by PSPEC. The power spectra use 15 GB on the disk and need to be read in by MRF. The ring fits are basically negligible at this point. While you may not want to keep the tiles and power spectra sitting around, they need to be written out to the disk at some point during the process. 
+
+For high-resolution analysis, you can have over 10^5 tiles for a single day. A standard number is 130321. This means 157 TB(!) of tracked tiles, and 7 TB of power spectra. Even if you have the disk space for this, or stagger the whole process so you process things in batches, the speed at which you can process data is limited by disk i/o. To make this scale of processing possible, the ATLAS code was made. The idea is to save time by never writing the tracked tiles or power spectra to the disk, and instead combine all three steps of the process (FRACK, PSPEC, MRF) into a single binary that can run on large core counts (>1k).
+
+FRACK and PSPEC are written in FORTRAN, while MRF is written in C. Instead of re-writing any of them in a different language, I found a way to compile them together as-is. Ideally, the FORTRAN components would be re-written in C, but I leave that as an exercise for the reader.
+
+ATLAS Inputs:
+- a set of full-disk Dopplergrams
+- a 'background' Dopplergram
+- command-line settings
+- (optional) a grid file, specifying lon/lat coordinates
+ATLAS Outputs:
+- ring frequency shifts at each disk location, for each mode
+
+
+For instructions on compiling ATLAS, see
+>COMPILING
+
+For instructions on downloading Dopplergrams and making a doplist, see
+>DOPPLERGRAMS
+
+For instruction on running ATLAS in various ways, see
+>RUNNING
+
+For a brief guide on modifying the code of ATLAS, see
+>MODIFYING

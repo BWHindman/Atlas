@@ -1,0 +1,81 @@
+# INSTRUCTIONS FOR RUNNING ATLAS
+
+## Simple Example
+ATLAS uses command-line options to set what it will do when run. The set of command-line options needed to do something complex can get long, so it's good to make your own scripts that handle it. If you can't remember what options are available, run './atlas -h':
+> ./atlas -h
+Minimal Usage: ./atlas
+	Other Options:
+	-v      Verbose Mode
+	-r [#]  Tracking rate (0=car, 1=snod, 2=custom)
+	-ml [file]  Master list of dopplergrams
+	-bk [file]  Background fits file
+	-ts[32,16,8,4,2,1]  Do tilesize [#]
+	-clon [#], -clat [#]  Central lon/lat
+	-lonrn [#], -latrn [#]  Lon/lat ranges
+	-memlimit [#]  Total memory limit in GB
+	-loaddops [#]  Number of dopplergrams to load at a time
+	-time  Record timing info for performance analysis
+	-outdir [dir]  Directory to save output in
+	-mdi  Use MDI settings (dopplergram size, scale, etc)
+	-pspec  Turn tracked tile into an unwrapped pspec
+	-extend  Use extended header info from newer dopplergrams
+	-grid [file]  File to read grid from
+	-fitguess [file]  Guess table for fitting
+	-fitout [file]  File to save fits to (binary)
+	-maxtiles [#]  Number of tiles per MPI process to hold in memory at once
+
+Unfortunately, some of these options are obsolete or perform duplicate tasks. I'll try to clean this up.
+
+Here's a simple example for running ATLAS on a workstation, along with a bit about each command-line option:
+
+> export OMP_NUM_THREADS 4
+> mpirun -np 4 ./atlas -v -r 1 -ml doplist -ts16 -clon 180 -clat 0 -lonrn 30 -latrn 30 -densepack 0.5 -loaddops 4 -outdir OUTPUT/ -bk hmi.V_avg120.2099.180.mean.fits
+
+"export OMP_NUM_THREADS 4" - set the environment variable for OpenMP threading to 4 threads. There isn't a way to force ATLAS to use a certain number, so just set this variable instead.
+"mpirun -np 4" - use MPI to launch 4 processes. Between this and the previous command, ATLAS will use 16 cores (but not 100% of the time)
+"-v" - While not necessary, verbose mode is useful for debugging and doesn't actually output that much text
+"-r 1" - Track at the Snodgrass rate. It will take the central latitude of each tile it tracks and shift it by the appropriate rate. The relevant numbers are hard-coded into ATLAS.
+"-ml doplist" - use the text file doplist for a list of each source Dopplergram to use. For info on how this file is formatted, see the section below called "Dopplergram Lists".
+"-ts16" - Do 16-degree tiles. You can do multiple tile sizes in the same run by adding more, but only tile sizes (1,2,4,8,16,32) are allowed.
+"-clon 180 -clat 0" - When creating a grid of tiles, use (180,0) as the central point. The longitude is in CMLon, not disk center coordinates.
+"-lonrn 30 -latrn 0" - The longitude and latitude range are 30 degrees, so make a grid that spans that range.
+"-densepack 0.5" - The fraction of an apodized tile size that adjacent tiles should be spaced out by. Standard densepack is 0.5, high resolution 16-degree analysis is 0.0166667. The resulting spacing in degrees is (tilesize)*(densepack)*(0.9375). The 0.9375 is from apodization.
+"-loaddops 4" - At each tracking step, load 4 source Dopplergrams. Since there are 4 MPI processes, each process will be assigned a single Dopplergram to load.
+"-outdir OUTPUT/" - Write the ring fits to files in OUTPUT/. The files will have a filename assigned by the MPI process it came from. With 4 MPI processes, there will be 4 output files.
+"-bk hmi.V_avg..." - Read in the FITS file to use for background subtraction from the Dopplergrams. These files can be downloaded from the HMI Pipeline, but quite a few can also be found in /antares/sdo/begr7169/BACK/, on hydra.
+
+## Full-Scale Run
+ATLAS is a fairly complicated piece of machinery, so running it on a large scale can be tricky. The file scripts/runjob.sh is a script I've used many times to run ATLAS on the Discover supercomputer.
+
+Generally speaking, these are the steps you need to take to do a large run of ATLAS
+1 - Download Dopplergrams
+2 - Make Dopplergram list
+3 - Download Dopplergram background file
+4 - Generate grid files
+5 - Generate run scripts
+6 - Submit run scripts to queueing system
+
+For a 90x90 degree patch at 0.25 degree resolution, there are 130321 grid points. This requires around 150k cpu-hours to do, which is far more than any supercomputer will allow you to burn in one sitting. On Discover, I've had moderate success using grid files with no more than 7500 points, which results in 18 separate grid files for this case. This also means you need to submit 18 different jobs to the queue. ATLAS outputs ring fits to the disk with filenames that depend on which MPI process is holding the data, so take care to not let the different jobs try to save data in the same directory, they will overwrite each other. Use the -outdir command-line option to prevent this.
+
+In terms of scaling, see the bottom few comments in scripts/runjob.sh for examples of number of cores vs number of threads vs number of tiles and how quickly ATLAS runs. Running on something like 64 nodes for around 8 hours usually does one of these 7500-tile runs.
+
+## Dopplergram Lists
+The Dopplergram list file is an ASCII file that specifies the filenames of the relevant Dopplergrams, one per line. If you want to track through 2048 Dopplergrams, you need 2048 lines in the file. The tracking part of ATLAS will not check to make sure the Dopplergram files are sequential in time. If there is a gap in the Dopplergram coverage, put a 0 in that line. The tracking code will interpolate over this step once all the other steps are done.
+
+One issue that I have often run into is that when pulling 2048 Dopplergrams from the HMI Pipeline, you only get 2047 or fewer. This usually means there is a missing step due to instrument problems or something. Instead of having to look through each filename to figure out where the gap is, I wrote a script that does a decent job at filling in the gaps with 0s. scripts/MakeListFiles.sh takes as input a directory that only contains the Dopplergrams you want to track through, the number of Dopplergrams you wanted to track through, a filename for the resulting Dopplergram list, and the intented cadence in seconds (usually 45). The script uses an executable called DopTime (see source and Makefile in scripts/) that reads a single Dopplergram and extracts the time it was recorded. The script marches through each file in the input directory and looks for jumps in the time greater than the intended cadence. It fills in these gaps in the dopplergram file with 0s, but it's generally a good idea to confirm the dopplergram file looks fine after it's done.
+
+It is sometimes necessary to put the filenames in quotes. Some machines require it and some don't. To avoid having to come up with clever unix commands to wrap the results of an ls into quotes, there is a script in scripts/ calles quotes.sh that will take an input file and generate an output that is the same except each line is surrounded by quotes.
+
+## Grid files
+The grid files that can be aread into ATLAS are fairly simple ASCII files. The first line of the file gives the total number of grid locations listed in the file, the number of unique longitudes in the grid, and the unique latitudes in the grid. These numbers should be space-separated. Unfortunately, no part of the code consideres the second two numbers, so they can be set to anything. They were originally added to increase computational efficiency, but I never got around to that.
+
+The lines that follow this single-line header are longitude/latitude pairs, one for each grid point, space-separated. Here's an example grid file:
+3 1 1
+180.0 0.0
+180.0 15.0
+180.0 -15.0
+The header of that grid file indicates there are three grid points that follow, and the locations listed are all at the same longitude and are spaced out in latitude.
+
+In the scripts/ subdirectory there is a grid.sh that can help make grid files. Run "head grid.sh" to get an idea of the command-line parameters to pass it to make a grid file. Since grid files for large analysis jobs can contain hundreds of thousands of grid points, there is an option to split the grid into multiple files. This way, you can run ATLAS individually with each file and not have to wait for an extremely long time to get results. Here's an example of running the script to generate a set of grid files for a high-resolution run:
+./grid.sh gridfile 180 0 90 90 0.25 7500
+This limits the number of grid points in each file to a max of 7500 points. I believe it will result in 18 different grid files.
