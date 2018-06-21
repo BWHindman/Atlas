@@ -1,7 +1,7 @@
 
 ! ATLAS CODE
 
-PROGRAM FRACK ! ignore name..
+PROGRAM Atlas
 
 	USE ParseInput
 	USE Communication_Library
@@ -41,10 +41,10 @@ PROGRAM FRACK ! ignore name..
 
 	! Output some stats to stdout
 	CALL MPI_Barrier(MPI_COMM_WORLD, ierr)
-	IF (verbose .AND. myid .EQ. 0) &
-		WRITE(*,'(I3,A)') nproc," processors checking in."
-
-	IF (verbose .AND. myid .EQ. 0) CALL PrintDetails()
+	IF (verbose .AND. myid .EQ. 0) THEN 
+	        WRITE(*,'(I3,A)') nproc," processors checking in."
+	        CALL PrintDetails()
+        ENDIF
 
 	! Allocate space for the backframe
 	ALLOCATE(backframe(doppix,doppix))

@@ -1,5 +1,4 @@
 #include "header.h"
-#include "string.h"
 #include "guess_table_16.h"
 
 void free_output (outputs *outp);
